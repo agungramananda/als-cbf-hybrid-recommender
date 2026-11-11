@@ -1,0 +1,81 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: products_db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: products_recommender
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend-api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: products_backend_api
+    restart: always
+    command: python main.py
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=postgres
+      - DB_PASSWORD=password
+      - DB_NAME=products_recommender
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - ./models:/app/models
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db-seeder:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: products_db_seeder
+    command: python seed_db.py --full
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=postgres
+      - DB_PASSWORD=password
+      - DB_NAME=products_recommender
+      - PARQUET_PATH=/app/datasets/meta.parquet
+      - CSV_PATH=/app/datasets/reviews.csv
+    volumes:
+      - ./backend:/app
+      - ./datasets:/app/datasets
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles:
+      - tools
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: products_frontend
+    restart: always
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend-api
+
+volumes:
+  postgres_data:
+
